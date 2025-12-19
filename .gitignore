@@ -6,7 +6,11 @@ dist/
 wheels/
 *.egg-info
 
+keys
+
 # Virtual environments
 .venv
 
 polymath_server.db
+
+.pytest_cache

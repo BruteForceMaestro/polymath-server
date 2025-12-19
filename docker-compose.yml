@@ -27,5 +27,12 @@ services:
     volumes:
       - neo4j_data:/data
 
+  # sidecar to create an agent
+  agent-setup:
+    build: .
+    volumes:
+      - ./keys:/app/keys
+    command: sh -c "python -u -m app.admin.create_agent --name DefaultAgent | tee /app/keys/latest_key.txt"
+
 volumes:
   neo4j_data:

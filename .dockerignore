@@ -18,3 +18,5 @@ README.md
 # Ignore git
 .git
 .gitignore
+
+keys
