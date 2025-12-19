@@ -31,38 +31,7 @@ The easiest way to get started is using Docker Compose:
 docker compose up
 ```
 The API will be available at [http://localhost:8000](http://localhost:8000).
-
-### Installation (Local Development)
-If you want to run the server locally without Docker:
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/your-repo/polymath-server.git
-    cd polymath-server
-    ```
-2.  **Install dependencies**:
-    ```bash
-    uv sync
-    ```
-3.  **Run Neo4j**: You still need a Neo4j instance. You can use the one from `docker-compose.yml`:
-    ```bash
-    docker compose up neo4j -d
-    ```
-4.  **Set Environment Variables**:
-    Create a `.env` file or export the following:
-    ```bash
-    export NEO4J_BOLT_URL=bolt://neo4j:let_me_in_please@localhost:7687
-    ```
-5.  **Run the Server**:
-    ```bash
-    uv run uvicorn app.main:app --reload
-    ```
-
-## Agent Creation
-The API requires an `X-API-Key` header for most operations. Use the provided CLI tool to create an agent and get your API key:
-```bash
-uv run python -m app.admin.create_agent --name your-agent-name
-```
-*Note: Make sure to save the API key displayed in the terminal.*
+An API key will be generated in the keys/ folder. Grab it from there and put it into your agent/client applications to begin contributing to the graph.
 
 ## Usage (REST API)
 
