@@ -14,3 +14,7 @@ keys
 polymath_server.db
 
 .pytest_cache
+
+
+local_copy.db
+data

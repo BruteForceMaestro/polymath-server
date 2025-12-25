@@ -11,7 +11,8 @@ services:
     depends_on:
       - neo4j
     volumes:
-      - ./app:/code/app # Live reload for development
+      - ./app:/app/app # Live reload for development
+      - ./data:/app/data
 
   neo4j:
     image: neo4j:5.12-community
@@ -31,7 +32,9 @@ services:
   agent-setup:
     build: .
     volumes:
+      - ./app:/app/app
       - ./keys:/app/keys
+      - ./data:/app/data
     command: sh -c "python -u -m app.admin.create_agent --name DefaultAgent | tee /app/keys/latest_key.txt"
 
 volumes:

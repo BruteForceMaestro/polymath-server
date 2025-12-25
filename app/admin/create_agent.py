@@ -1,9 +1,8 @@
 import argparse
 from sqlmodel import Session, select
 from app.db import engine, init_dbs
-from app.models.auth import Agent, Role
-from app.models.node_work import NodePatch, NodeComment
-from app.models.graph import VerificationLevel
+from polymath_schemas.auth import Agent, Role
+from polymath_schemas.graph import VerificationLevel
 from app.services.auth import generate_api_key, hash_api_key
 
 def create_agent(name: str, role_name: str = "admin"):

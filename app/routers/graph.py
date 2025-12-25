@@ -1,60 +1,23 @@
+from sqlalchemy.exc import DBAPIError
 from fastapi import APIRouter, Depends, Header, HTTPException, status, Body
 from pydantic import BaseModel
 from datetime import datetime
-from app.models.graph import Statement, VerificationLevel, Implication, PolymathBase
-from app.models.auth import Agent
-from app.models.node_work import NodeComment, NodePatch, NodeCommentRead, NodePatchRead
+from polymath_schemas.graph import Statement, VerificationLevel, Implication, PolymathBase, Tag
+from polymath_schemas.auth import Agent
+from polymath_schemas.node_work import NodeComment, NodePatch, NodeCommentRead, NodePatchRead
+from polymath_schemas.api_requests import *
+from polymath_schemas.api_responses import *
 from app.db import get_session
 from app.services.auth import hash_api_key
-from sqlmodel import Session, select
+from sqlmodel import Session, select, text
 from neomodel import db
-from typing import Literal, Optional, List, Union
+from polymath_schemas.utils import utcnow
 import uuid
 
 router = APIRouter(
     prefix="/graph",
     tags=["graph"]
 )
-
-class CreateNode(BaseModel):
-    human_rep: str
-    lean_rep: str 
-    verification: Optional[int] 
-
-class CreateStatement(CreateNode):
-    category: str
-
-class CreateImplication(CreateNode):
-    logic_op: Literal['AND', 'OR']
-    premises_ids: list[str]
-    concludes_ids: list[str]
-
-class NodePatchRequest(BaseModel):
-    human_rep: Optional[str] = None
-    lean_rep: Optional[str] = None
-    verification: Optional[int] = None
-
-class PolymathBaseRead(BaseModel):
-    uid: str
-    author_id: str
-    created_at: datetime
-    updated_at: datetime
-    human_rep: str | None = None
-    lean_rep: str | None = None
-    verification: VerificationLevel
-
-class StatementRead(PolymathBaseRead):
-    node_type: Literal["Statement"] = "Statement"  # Discriminator
-    category: str
-
-class ImplicationRead(PolymathBaseRead):
-    node_type: Literal["Implication"] = "Implication" # Discriminator
-    logic_operator: str
-
-class UnifiedNodeResponse(BaseModel):
-    node_data: Union[StatementRead, ImplicationRead] 
-    patches: List[NodePatchRead]
-    comments: List[NodeCommentRead]
 
 def get_current_agent(x_api_key: str = Header(..., alias="X-API-Key"), sql_db: Session = Depends(get_session)):
     with sql_db:
@@ -67,12 +30,17 @@ def get_current_agent(x_api_key: str = Header(..., alias="X-API-Key"), sql_db: S
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid API Key",
             )
+
+        assert agent.id is not None, "Database integrity error: Agent found without ID"
         
         return agent
 
+
 @router.post("/node/statement", response_model=StatementRead)
 def create_statement(new_statement: CreateStatement, agent: Agent = Depends(get_current_agent)):
-    if new_statement.verification > agent.role.highest_verification_allowed:
+    verification = new_statement.verification or VerificationLevel.SPECULATIVE
+
+    if verification > agent.role.highest_verification_allowed:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not enough permissions to apply verification of this level."
@@ -92,8 +60,13 @@ def create_statement(new_statement: CreateStatement, agent: Agent = Depends(get_
         category=new_statement.category, 
         human_rep=new_statement.human_rep,
         lean_rep=new_statement.lean_rep,
-        verification= new_statement.verification or VerificationLevel.SPECULATIVE
+        verification=verification
     ).save()
+
+    for tag_name in new_statement.tags:
+        tag = Tag.get_or_create({"name": tag_name.lower().strip()})[0] # type: ignore
+        
+        stat_obj.tags.connect(tag)
 
     return stat_obj
 
@@ -197,7 +170,9 @@ def create_implication(
     new_impl: CreateImplication, 
     agent: Agent = Depends(get_current_agent)
 ):
-    if new_impl.verification > agent.role.highest_verification_allowed:
+    verification = new_impl.verification or VerificationLevel.SPECULATIVE
+
+    if verification > agent.role.highest_verification_allowed:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not enough permissions to apply verification of this level."
@@ -211,7 +186,12 @@ def create_implication(
             detail="Non-unique implication"
         )
     
-    impl_obj = create_implication_cypher(new_impl, agent.id)
+    impl_obj = create_implication_cypher(new_impl, str(agent.id))
+
+    for tag_name in new_impl.tags:
+        tag = Tag.get_or_create({"name": tag_name.lower().strip()})[0] # type: ignore
+        
+        impl_obj.tags.connect(tag)
 
     return impl_obj
 
@@ -249,7 +229,7 @@ def patch_node(
             agent_id=agent.id,
             update_data=update_data
         )
-        node.updated_at = datetime.utcnow()
+        node.updated_at = utcnow()
 
         sql_db.add(new_patch)
         sql_db.commit()
@@ -323,3 +303,35 @@ def get_node_details(uid: str, session: Session = Depends(get_session)):
         patches=patches,
         comments=comments
     )
+
+
+@router.post("/metadata/query")
+async def metadata_query(
+    query: str = Body(..., media_type="text/plain", example="SELECT * FROM users LIMIT 5"),
+    _: Agent = Depends(get_current_agent),
+    sql_db: Session = Depends(get_session)
+):
+    """
+    Execute a raw Read-Only SQL query against the database.
+    """
+    
+    forbidden_keywords = ["DROP", "DELETE", "INSERT", "UPDATE", "TRUNCATE", "ALTER", "GRANT"]
+    if any(keyword in query.upper() for keyword in forbidden_keywords):
+        raise HTTPException(status_code=400, detail="Only SELECT operations are permitted.")
+
+    try:
+        with sql_db:
+            result = sql_db.connection().execute(text(query))
+            
+            columns = result.keys()
+            clean_results = [dict(zip(columns, row)) for row in result.fetchall()]
+            
+            return {
+                "count": len(clean_results),
+                "data": clean_results
+            }
+
+    except DBAPIError as e:
+        raise HTTPException(status_code=400, detail=f"Database Error: {str(e.orig)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="An internal error occurred.")

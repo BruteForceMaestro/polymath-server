@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.124.4",
     "httpx>=0.28.1",
     "neomodel>=6.0.0",
+    "polymath-schemas==0.2.0",
     "pydantic>=2.12.5",
     "pytest>=9.0.2",
     "sqlmodel>=0.0.27",
