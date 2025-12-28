@@ -5,8 +5,8 @@ from sqlmodel import SQLModel, Session, create_engine
 from sqlalchemy.pool import StaticPool
 
 from app.routers import graph as graph_router
-from app.models.auth import Agent, Role
-from app.models.graph import VerificationLevel
+from polymath_schemas.auth import Agent, Role
+from polymath_schemas.graph import VerificationLevel
 from app.services.auth import hash_api_key
 
 

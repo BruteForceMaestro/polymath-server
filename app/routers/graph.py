@@ -12,7 +12,9 @@ from app.services.auth import hash_api_key
 from sqlmodel import Session, select, text
 from neomodel import db
 from polymath_schemas.utils import utcnow
+from sqlalchemy.orm import joinedload # Import this
 import uuid
+import re
 
 router = APIRouter(
     prefix="/graph",
@@ -21,7 +23,7 @@ router = APIRouter(
 
 def get_current_agent(x_api_key: str = Header(..., alias="X-API-Key"), sql_db: Session = Depends(get_session)):
     with sql_db:
-        statement = select(Agent).where(Agent.api_key_hash == hash_api_key(x_api_key))
+        statement = select(Agent).options(joinedload(Agent.role)).where(Agent.api_key_hash == hash_api_key(x_api_key)) # type: ignore
         results = sql_db.exec(statement)
         agent = results.first()
 
@@ -36,7 +38,7 @@ def get_current_agent(x_api_key: str = Header(..., alias="X-API-Key"), sql_db: S
         return agent
 
 
-@router.post("/node/statement", response_model=StatementRead)
+@router.post("/nodes/statement", response_model=StatementRead)
 def create_statement(new_statement: CreateStatement, agent: Agent = Depends(get_current_agent)):
     verification = new_statement.verification or VerificationLevel.SPECULATIVE
 
@@ -56,17 +58,20 @@ def create_statement(new_statement: CreateStatement, agent: Agent = Depends(get_
         
     # create node on graph
     stat_obj = Statement(
-        author_id=agent.id, 
-        category=new_statement.category, 
-        human_rep=new_statement.human_rep,
-        lean_rep=new_statement.lean_rep,
-        verification=verification
+    author_id=agent.id, 
+    category=new_statement.category, 
+    human_rep=new_statement.human_rep,
+    lean_rep=new_statement.lean_rep,
+    verification=verification
     ).save()
 
     for tag_name in new_statement.tags:
+        # Note: .get_or_create returns a tuple (object, created)
         tag = Tag.get_or_create({"name": tag_name.lower().strip()})[0] # type: ignore
-        
         stat_obj.tags.connect(tag)
+
+    # Synchronize the object with the database
+    stat_obj.refresh()
 
     return stat_obj
 
@@ -80,9 +85,13 @@ async def run_cypher(
     """
     # now this IS REALLY BAD security but since this is a demo I don't care. 
     forbidden_keywords = ["CREATE", "DELETE", "DETACH", "SET", "MERGE", "REMOVE", "DROP"]
-    if any(keyword in query.upper() for keyword in forbidden_keywords):
-        raise HTTPException(status_code=400, detail="Write operations are not allowed.")
 
+    # Pattern looks for the keyword surrounded by word boundaries (\b)
+    # This matches "CREATE" but ignores "created_at"
+    pattern = r'\b(' + '|'.join(forbidden_keywords) + r')\b'
+
+    if re.search(pattern, query, re.IGNORECASE):
+        raise HTTPException(status_code=400, detail="Write operations are not allowed.")
     try:
         results, meta = db.cypher_query(query)
         
@@ -263,7 +272,7 @@ def comment_node(
     
     return new_comment_obj
 
-@router.get("/node/{uid}", response_model=UnifiedNodeResponse)
+@router.get("/nodes/{uid}", response_model=UnifiedNodeResponse)
 def get_node_details(uid: str, session: Session = Depends(get_session)):
     
     patches = session.exec(select(NodePatch).where(NodePatch.target_node_id == uid)).all()

@@ -4,8 +4,10 @@ from typing import Generator
 from pathlib import Path
 import os
 
-# Since WORKDIR is /app, this is relative to your running process
-DB_DIR = Path("/app/data") 
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+# Use an environment variable if set (for Docker), otherwise use local project folder
+DB_DIR = Path(os.getenv("DATABASE_DIR", BASE_DIR / "data"))
 DB_DIR.mkdir(parents=True, exist_ok=True)
 
 sqlite_file_path = DB_DIR / "polymath_server.db"
@@ -14,10 +16,18 @@ connect_args = {"check_same_thread": False}
 
 engine = create_engine(sqlite_url, echo=True, connect_args=connect_args)
 
-NEO4J_URL = os.getenv("NEO4J_BOLT_URL", "bolt://neo4j:password@localhost:7687")
+
+NEO4J_URL = os.getenv("NEO4J_URL")
 
 def init_dbs():
-    config.DATABASE_URL = NEO4J_URL # type: ignore
+
+    user = os.getenv("NEO4J_USER")  
+    password = os.getenv("NEO4J_PASSWORD") 
+    connection_string = f"bolt://{user}:{password}@{NEO4J_URL}"
+
+    print(connection_string)
+
+    config.DATABASE_URL = connection_string # type: ignore
     SQLModel.metadata.create_all(engine)
 
 def get_session() -> Generator[Session, None, None]:

@@ -207,16 +207,16 @@ wheels = [
 
 [[package]]
 name = "polymath-schemas"
-version = "0.2.0"
+version = "0.2.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "neomodel" },
     { name = "pydantic" },
     { name = "sqlmodel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a4/67/9c286f88cfb082ce847b367e5a199951ab847aceb2e3cbd4700ab228da6b/polymath_schemas-0.2.0.tar.gz", hash = "sha256:d9bdf19a35c92236b00f742518a0a2f1fb1b3dda8f2b41f67c65b61ad5970e1b", size = 3495, upload-time = "2025-12-25T20:19:29.061Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/6e/38c1abd2e74b41eace63300ab95cd3d1824402a412645afb5fdd48b03f9c/polymath_schemas-0.2.5.tar.gz", hash = "sha256:9529e43dcf0f4c8018100a3cd4d6331a05077dd6f7f24fc0a178bd20d645392a", size = 3480, upload-time = "2025-12-27T12:18:55.66Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/55/3c/b300c556e841ffeb9f161cab12b4a9075933c1411ae89ea62807f228e741/polymath_schemas-0.2.0-py3-none-any.whl", hash = "sha256:cfc3d27ada07a72fdd11037d7bee90e99909239ade9ad396b0345b28ba2a8036", size = 5145, upload-time = "2025-12-25T20:19:27.896Z" },
+    { url = "https://files.pythonhosted.org/packages/31/8e/1d6732da32e8112e10a4848d75a56a5096aa535f457493e4f58f5ce89262/polymath_schemas-0.2.5-py3-none-any.whl", hash = "sha256:fd0df9d4043c85babf67fb3159268c7d632be3d71d1318c42ec687a949006bd7", size = 5132, upload-time = "2025-12-27T12:18:54.394Z" },
 ]
 
 [[package]]
@@ -239,7 +239,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.124.4" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "neomodel", specifier = ">=6.0.0" },
-    { name = "polymath-schemas", specifier = "==0.2.0" },
+    { name = "polymath-schemas", specifier = ">=0.2.1" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "sqlmodel", specifier = ">=0.0.27" },

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.models.graph import VerificationLevel
+from polymath_schemas.graph import VerificationLevel
 
 
 # ------------------------
@@ -91,14 +91,14 @@ def test_create_statement_success(client, graph_module, monkeypatch):
                 author_id=str(self.kwargs["author_id"]),
                 human_rep=self.kwargs.get("human_rep"),
                 lean_rep=self.kwargs.get("lean_rep"),
-                verification=self.kwargs.get("verification"),
-                category=self.kwargs.get("category"),
+                verification=self.kwargs.get("verification") or 1,
+                category=self.kwargs.get("category") or "Lemma",
             )
 
     monkeypatch.setattr(graph_module, "Statement", MockStatement)
 
     payload = {
-        "category": "THEOREM",
+        "category": "Theorem",
         "human_rep": "hello",
         "lean_rep": "theorem t : True := by trivial",
         "verification": int(VerificationLevel.SPECULATIVE),
@@ -109,7 +109,7 @@ def test_create_statement_success(client, graph_module, monkeypatch):
     body = res.json()
 
     assert body["uid"] == "stmt-uid"
-    assert body["category"] == "THEOREM"
+    assert body["category"] == "Theorem"
     assert body["human_rep"] == "hello"
     assert body["lean_rep"] == payload["lean_rep"]
     assert body["verification"] == int(VerificationLevel.SPECULATIVE)
@@ -117,14 +117,14 @@ def test_create_statement_success(client, graph_module, monkeypatch):
 
 def test_create_statement_permission_denied(client, graph_module):
     # override auth dependency to a low-permission agent
-    from app.models.auth import Agent, Role
+    from polymath_schemas.auth import Agent, Role
 
     low_agent = Agent(id=1, name="low", api_key_hash="x", role=Role(name="low", highest_verification_allowed=1))
 
     client.app.dependency_overrides[graph_module.get_current_agent] = lambda: low_agent
 
     payload = {
-        "category": "THEOREM",
+        "category": "Theorem",
         "human_rep": "hello",
         "lean_rep": "theorem t : True := by trivial",
         "verification": 4,
@@ -139,7 +139,7 @@ def test_create_statement_non_unique_formal_statement(client, graph_module, monk
     monkeypatch.setattr(graph_module.Statement, "nodes", SimpleNamespace(first_or_none=lambda **kw: object()))
 
     payload = {
-        "category": "THEOREM",
+        "category": "Theorem",
         "human_rep": "hello",
         "lean_rep": "duplicate",
         "verification": 1,
@@ -263,7 +263,7 @@ def test_patch_node_success_persists_patch(client, graph_module, session, monkey
     assert body["update_data"] == {"human_rep": "new"}
 
     # Ensure it was actually committed to SQL
-    from app.models.node_work import NodePatch
+    from polymath_schemas.node_work import NodePatch
 
     patches = session.exec(graph_module.select(NodePatch).where(NodePatch.target_node_id == "n1")).all()
     assert len(patches) == 1
@@ -294,7 +294,7 @@ def test_comment_node_success_persists_comment(client, graph_module, session, mo
     assert body["target_node_id"] == "n1"
     assert body["comment"] == "hello"
 
-    from app.models.node_work import NodeComment
+    from polymath_schemas.node_work import NodeComment
 
     comments = session.exec(graph_module.select(NodeComment).where(NodeComment.target_node_id == "n1")).all()
     assert len(comments) == 1
@@ -315,7 +315,7 @@ def test_comment_node_404_when_graph_node_missing(client, graph_module, monkeypa
 
 def test_get_node_details_statement_success(client, graph_module, session, monkeypatch):
     # Seed a comment and patch into SQL so endpoint returns them
-    from app.models.node_work import NodePatch, NodeComment
+    from polymath_schemas.node_work import NodePatch, NodeComment
 
     session.add(NodePatch(target_node_id="s1", agent_id="1", update_data={"human_rep": "x"}))
     session.add(NodeComment(target_node_id="s1", agent_id="1", comment="c"))
