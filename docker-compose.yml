@@ -9,6 +9,8 @@ services:
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=let_me_in_please
       - DATABASE_DIR=/app/data
+    env_file:
+      - .env
     depends_on:
       - neo4j
     volumes:
@@ -16,7 +18,7 @@ services:
       - ./data:/app/data
 
   neo4j:
-    image: neo4j:5.12-community
+    image: neo4j:5.26-community
     container_name: polymath_graph
     ports:
       - "7474:7474" # Browser UI

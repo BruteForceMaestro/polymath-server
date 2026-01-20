@@ -18,3 +18,5 @@ polymath_server.db
 
 local_copy.db
 data
+
+.env

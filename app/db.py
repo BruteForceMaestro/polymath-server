@@ -1,5 +1,5 @@
 from sqlmodel import create_engine, SQLModel, Session
-from neomodel import config
+from neomodel import config, db
 from typing import Generator
 from pathlib import Path
 import os
@@ -28,6 +28,7 @@ def init_dbs():
     print(connection_string)
 
     config.DATABASE_URL = connection_string # type: ignore
+    db.install_all_labels()
     SQLModel.metadata.create_all(engine)
 
 def get_session() -> Generator[Session, None, None]:

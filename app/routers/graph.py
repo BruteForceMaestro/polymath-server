@@ -9,12 +9,20 @@ from polymath_schemas.api_requests import *
 from polymath_schemas.api_responses import *
 from app.db import get_session
 from app.services.auth import hash_api_key
+from app.config import vo
 from sqlmodel import Session, select, text
 from neomodel import db
+from neomodel.semantic_filters import VectorFilter
 from polymath_schemas.utils import utcnow
 from sqlalchemy.orm import joinedload # Import this
 import uuid
 import re
+from neo4j.time import DateTime as Neo4jDateTime  # from neo4j Python driver
+
+def to_py_datetime(v):
+    if isinstance(v, Neo4jDateTime):
+        return v.to_native()  # -> datetime.datetime (tz-aware)
+    return v
 
 router = APIRouter(
     prefix="/graph",
@@ -50,19 +58,24 @@ def create_statement(new_statement: CreateStatement, agent: Agent = Depends(get_
     
     # if formal statement matches, then discard/raise error
     stat_obj = Statement.nodes.first_or_none(lean_rep=new_statement.lean_rep)
-    if stat_obj:
+    if stat_obj and new_statement.lean_rep != "No Lean representation available.": # maybe a better way to encode this
         raise HTTPException(
             status_code=status.HTTP_406_NOT_ACCEPTABLE,
             detail="Non-unique formal statement"
         )
+
+    # let's say that the human_rep is vectorized, makes the most sense i guess
+    vec = vo.embed([new_statement.human_rep], model="voyage-3.5").embeddings[0]
         
     # create node on graph
     stat_obj = Statement(
-    author_id=agent.id, 
-    category=new_statement.category, 
-    human_rep=new_statement.human_rep,
-    lean_rep=new_statement.lean_rep,
-    verification=verification
+        uid=new_statement.uid,
+        author_id=agent.id, 
+        category=new_statement.category, 
+        human_rep=new_statement.human_rep,
+        lean_rep=new_statement.lean_rep,
+        verification=verification,
+        embedding=vec
     ).save()
 
     for tag_name in new_statement.tags:
@@ -144,7 +157,7 @@ def create_implication_cypher(new_impl: CreateImplication, author_id: str):
     MATCH (c:Statement) WHERE c.uid IN $c_ids
     WITH premises, collect(c) AS conclusions
 
-    CREATE (i:Implication {logic_operator: $logic_op, uid: $new_uid, human_rep: $human_rep, lean_rep: $lean_rep, verification: $verification, author_id: $author_id})
+    CREATE (i:PolymathBase:Implication {logic_operator: $logic_op, uid: $new_uid, human_rep: $human_rep, lean_rep: $lean_rep, verification: $verification, author_id: $author_id, embedding: $vec_emb})
 
     FOREACH (p_node IN premises | 
         MERGE (i)<-[:IS_PREMISE]-(p_node)
@@ -157,8 +170,12 @@ def create_implication_cypher(new_impl: CreateImplication, author_id: str):
 
     RETURN i
     """
+
+
+    vec = vo.embed([new_impl.human_rep], model="voyage-3.5").embeddings[0]
     
     params = {
+        'new_uid': new_impl.uid,
         'logic_op': new_impl.logic_op,
         'author_id': author_id,
         'human_rep': new_impl.human_rep,
@@ -166,7 +183,7 @@ def create_implication_cypher(new_impl: CreateImplication, author_id: str):
         'verification': new_impl.verification,
         'p_ids': new_impl.premises_ids,
         'c_ids': new_impl.concludes_ids,
-        'new_uid': str(uuid.uuid4())
+        'vec_emb': vec
     }
 
     results, _ = db.cypher_query(query, params)
@@ -227,9 +244,14 @@ def patch_node(
     update_data = patch.model_dump(exclude_unset=True)
 
     for key, value in update_data.items():
-        # add verification and so forth here later.
+        if key == "human_rep" and value:
+            # embedding
+            vec = vo.embed([value], model="voyage-3.5").embeddings[0]
+            setattr(node, "embedding", vec)
+        
         setattr(node, key, value)
     
+    node.save()
     # now this update_data could be stored in a nodepatch
     # we wanna save history etc
     with sql_db:
@@ -280,17 +302,25 @@ def get_node_details(uid: str, session: Session = Depends(get_session)):
 
     # raw search here because want any node
     query = """
-    MATCH (n) WHERE n.uid = $uid 
-    RETURN n, labels(n)
-    """
+MATCH (n {uid: $uid})
+RETURN n{
+  .*,
+  created_at: coalesce(n.created_at, datetime({timezone:'UTC'})),
+  updated_at: coalesce(n.updated_at, datetime({timezone:'UTC'}))
+} AS props,
+labels(n) AS labels
+"""
     results, meta = db.cypher_query(query, {'uid': uid})
 
     if not results:
         raise HTTPException(status_code=404, detail="Node not found in Graph")
-
+    
     row = results[0]
     raw_node = row[0]
     labels = row[1]
+
+    raw_node["created_at"] = to_py_datetime(raw_node.get("created_at"))
+    raw_node["updated_at"] = to_py_datetime(raw_node.get("updated_at")) 
 
     node_payload = None
 
@@ -344,3 +374,33 @@ async def metadata_query(
         raise HTTPException(status_code=400, detail=f"Database Error: {str(e.orig)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail="An internal error occurred.")
+
+@router.post("/vector_query", response_model=list[tuple[Union[StatementRead, ImplicationRead], float]])
+async def find_node_with_embedding(
+    content: str = Body(..., media_type="text/plain"),
+    _: Agent = Depends(get_current_agent)
+):
+    """Find a statement or implication based on the string content, vectorized."""
+    vec = vo.embed([content], model="voyage-3.5").embeddings[0]
+    results = PolymathBase.nodes.filter(vector_filter=VectorFilter(topk=5, vector_attribute_name="embedding", candidate_vector=vec)).all() # type: ignore
+
+    return_list : list[tuple[Union[StatementRead, ImplicationRead], float]] = []
+    for result in results:
+        raw_node = result[0]
+
+        node_payload = None
+        if hasattr(raw_node, "category"):
+            node_payload = StatementRead(
+                **raw_node.__properties__, # Unpack properties like uid, human_rep, category
+                node_type="Statement"
+            )
+        else:
+            node_payload = ImplicationRead(
+                **raw_node.__properties__, # Unpack properties like uid, logic_operator
+                node_type="Implication"
+            )
+        
+        return_list.append((node_payload, result[1]))
+
+        
+    return return_list
